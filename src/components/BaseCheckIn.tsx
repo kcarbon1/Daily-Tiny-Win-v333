@@ -1,12 +1,15 @@
-import { useAccount, useConnect, useDisconnect, useWriteContract } from 'wagmi';
+import { useEffect, useState } from 'react';
+import { useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { encodeFunctionData, stringToHex } from 'viem';
 import { injected } from 'wagmi/connectors';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Wallet, CheckCircle, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { Wallet, CheckCircle, Loader2, ExternalLink } from 'lucide-react';
 
-// Mock contract for demo purposes
-const CHECKIN_CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000'; // Replace with real contract
+// Replace this address with your deployed contract address from Remix
+const CHECKIN_CONTRACT_ADDRESS = '0x7cC00ACC3E0Ef33e6c2a2e810545CC741C1a2e68'; 
+const BUILDER_CODE = 'bc_u5a7nkor';
+
 const ABI = [
   {
     name: 'checkIn',
@@ -20,21 +23,37 @@ const ABI = [
 export function BaseCheckIn() {
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { writeContract, isPending, isSuccess, error } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = 
+    useWaitForTransactionReceipt({ 
+      hash, 
+    });
+
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
+
+  useEffect(() => {
+    if (isConfirmed) {
+      setHasCheckedIn(true);
+    }
+  }, [isConfirmed]);
 
   const handleCheckIn = async () => {
     try {
-      // In a real app, we would call the contract
-      // writeContract({
-      //   address: CHECKIN_CONTRACT_ADDRESS,
-      //   abi: ABI,
-      //   functionName: 'checkIn',
-      // });
-      
-      // For demo, we'll simulate success
-      setHasCheckedIn(true);
+      // Encode function call
+      const calldata = encodeFunctionData({
+        abi: ABI,
+        functionName: 'checkIn',
+      });
+
+      // Append hex-encoded builder code per Base documentation
+      const builderCodeHex = stringToHex(BUILDER_CODE).slice(2);
+      const dataWithBuilderCode = `${calldata}${builderCodeHex}` as `0x${string}`;
+
+      writeContract({
+        address: CHECKIN_CONTRACT_ADDRESS as `0x${string}`,
+        data: dataWithBuilderCode,
+      });
     } catch (e) {
       console.error(e);
     }
@@ -52,30 +71,61 @@ export function BaseCheckIn() {
     );
   }
 
+  const isWorking = isPending || isConfirming;
+
   return (
     <div className="space-y-4">
       {hasCheckedIn ? (
-        <div className="flex items-center gap-3 text-leaf-green font-bold bg-white p-4 rounded-2xl border-2 border-leaf-green shadow-sm">
-          <CheckCircle size={24} />
-          Checked in for today!
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 text-leaf-green font-bold bg-white p-4 rounded-2xl border-2 border-leaf-green shadow-sm text-sm">
+            <CheckCircle size={20} />
+            Checked in on Base!
+          </div>
+          {hash && (
+            <a 
+              href={`https://basescan.org/tx/${hash}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 text-[10px] text-slate-400 hover:text-base-blue transition-colors font-bold uppercase tracking-widest"
+            >
+              View on Basescan <ExternalLink size={10} />
+            </a>
+          )}
         </div>
       ) : (
-        <Button 
-          onClick={handleCheckIn}
-          disabled={isPending}
-          className="w-full bg-base-blue hover:bg-blue-700 text-white rounded-full py-7 text-lg font-bold shadow-[0_10px_20px_rgba(0,82,255,0.3)] transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          {isPending ? (
-            <Loader2 className="mr-2 animate-spin" size={20} />
-          ) : (
-            <CheckCircle className="mr-2" size={20} />
+        <div className="space-y-3">
+          <Button 
+            onClick={handleCheckIn}
+            disabled={isWorking || CHECKIN_CONTRACT_ADDRESS.startsWith('0x000')}
+            className="w-full bg-base-blue hover:bg-blue-700 text-white rounded-full py-7 text-lg font-bold shadow-[0_10px_20px_rgba(0,82,255,0.3)] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale"
+          >
+            {isWorking ? (
+              <Loader2 className="mr-2 animate-spin" size={20} />
+            ) : (
+              <CheckCircle className="mr-2" size={20} />
+            )}
+            {isConfirming ? 'Confirming...' : 'Daily Check-in'}
+          </Button>
+          
+          {CHECKIN_CONTRACT_ADDRESS.startsWith('0x000') && (
+            <p className="text-[10px] text-orange-500 text-center font-bold">
+              ⚠️ Set contract address in BaseCheckIn.tsx
+            </p>
           )}
-          Daily Check-in
-        </Button>
+
+          {error && (
+            <p className="text-[10px] text-red-500 text-center font-medium">
+              Error: {error.message.includes('User rejected') ? 'Transaction rejected' : 'Something went wrong'}
+            </p>
+          )}
+        </div>
       )}
-      <p className="text-[10px] text-slate-400 text-center font-bold uppercase tracking-widest">
-        0.0001 ETH Gas • Base Mainnet
-      </p>
+      
+      {!hasCheckedIn && (
+        <p className="text-[10px] text-slate-400 text-center font-bold uppercase tracking-widest">
+          ~0.0001 ETH Gas • Base Mainnet
+        </p>
+      )}
     </div>
   );
 }
