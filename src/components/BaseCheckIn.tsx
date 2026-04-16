@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useConnect, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { encodeFunctionData, stringToHex } from 'viem';
 import { injected } from 'wagmi/connectors';
 import { Button } from './ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Wallet, CheckCircle, Loader2, ExternalLink } from 'lucide-react';
+import { Wallet, CheckCircle, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
 
-// Replace this address with your deployed contract address from Remix
+// Your contract address
 const CHECKIN_CONTRACT_ADDRESS = '0x7cC00ACC3E0Ef33e6c2a2e810545CC741C1a2e68'; 
 const BUILDER_CODE = 'bc_u5a7nkor';
 
@@ -21,9 +20,9 @@ const ABI = [
 ] as const;
 
 export function BaseCheckIn() {
-  const { address, isConnected } = useAccount();
+  const { isConnected, chainId } = useAccount();
   const { connect } = useConnect();
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { sendTransaction, data: hash, isPending, error } = useSendTransaction();
   
   const { isLoading: isConfirming, isSuccess: isConfirmed } = 
     useWaitForTransactionReceipt({ 
@@ -50,8 +49,8 @@ export function BaseCheckIn() {
       const builderCodeHex = stringToHex(BUILDER_CODE).slice(2);
       const dataWithBuilderCode = `${calldata}${builderCodeHex}` as `0x${string}`;
 
-      writeContract({
-        address: CHECKIN_CONTRACT_ADDRESS as `0x${string}`,
+      sendTransaction({
+        to: CHECKIN_CONTRACT_ADDRESS as `0x${string}`,
         data: dataWithBuilderCode,
       });
     } catch (e) {
@@ -96,7 +95,7 @@ export function BaseCheckIn() {
         <div className="space-y-3">
           <Button 
             onClick={handleCheckIn}
-            disabled={isWorking || CHECKIN_CONTRACT_ADDRESS.startsWith('0x000')}
+            disabled={isWorking}
             className="w-full bg-base-blue hover:bg-blue-700 text-white rounded-full py-7 text-lg font-bold shadow-[0_10px_20px_rgba(0,82,255,0.3)] transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale"
           >
             {isWorking ? (
@@ -104,19 +103,23 @@ export function BaseCheckIn() {
             ) : (
               <CheckCircle className="mr-2" size={20} />
             )}
-            {isConfirming ? 'Confirming...' : 'Daily Check-in'}
+            {isConfirming ? 'Confirming...' : (isPending ? 'Check your wallet' : 'Daily Check-in')}
           </Button>
-          
-          {CHECKIN_CONTRACT_ADDRESS.startsWith('0x000') && (
-            <p className="text-[10px] text-orange-500 text-center font-bold">
-              ⚠️ Set contract address in BaseCheckIn.tsx
-            </p>
-          )}
 
           {error && (
-            <p className="text-[10px] text-red-500 text-center font-medium">
-              Error: {error.message.includes('User rejected') ? 'Transaction rejected' : 'Something went wrong'}
-            </p>
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center gap-1 text-[10px] text-red-500 font-bold uppercase tracking-tight">
+                <AlertCircle size={12} />
+                <span>Transaction Failed</span>
+              </div>
+              <p className="text-[9px] text-slate-400 max-w-[200px] text-center leading-tight">
+                {error.message.includes('User rejected') 
+                  ? 'User canceled transaction' 
+                  : (error.message.includes('ChainMismatch') 
+                    ? 'Switch to Base Mainnet in your wallet'
+                    : error.message.split('\n')[0].slice(0, 60) + '...')}
+              </p>
+            </div>
           )}
         </div>
       )}
